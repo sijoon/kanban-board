@@ -62,6 +62,7 @@
       <button id="btn-join-group">코드 참여</button>
     </div>
     <div class="user-info">
+      <button class="activity-log-btn hidden" id="btn-activity-log">활동 기록</button>
       <span class="user-email" id="user-email"></span>
       <button class="logout-btn" id="btn-logout">로그아웃</button>
     </div>
@@ -127,6 +128,18 @@
     </section>
 
   </main>
+
+  <!-- ── 활동 기록 패널 ── -->
+  <aside id="activity-panel" class="activity-panel">
+    <div class="activity-panel-header">
+      <h3 class="activity-panel-title">활동 기록</h3>
+      <div class="activity-panel-actions">
+        <button id="btn-activity-refresh" class="activity-btn" title="새로고침">↻</button>
+        <button id="btn-activity-close" class="activity-btn" title="닫기">✕</button>
+      </div>
+    </div>
+    <div id="activity-list" class="activity-list"></div>
+  </aside>
 
   <!-- ── 그룹 생성 모달 ── -->
   <div id="modal-create-group" class="modal-overlay hidden">

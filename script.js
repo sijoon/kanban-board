@@ -16,6 +16,8 @@ const state = {
 
 let userGroups = [];
 
+const COL_NAMES = { todo: 'To-do', inprogress: 'In-progress', done: 'Done' };
+
 // ── Auth UI ───────────────────────────────────────────────
 
 function showAuthOverlay() {
@@ -26,6 +28,7 @@ function showAuthOverlay() {
   state.cards = {};
   state.currentGroupId = null;
   userGroups = [];
+  closeActivityPanel();
   renderAllCards();
   updateCardCounts();
 }
@@ -39,6 +42,8 @@ async function showApp() {
   document.getElementById('user-email').textContent = email;
 
   await loadGroups();
+  document.getElementById('btn-activity-log').classList.add('hidden');
+  closeActivityPanel();
   await loadCards();
 }
 
@@ -374,6 +379,9 @@ function handleDrop(e) {
   const targetColumn = columnBody.dataset.column;
   const cardEl = document.querySelector(`.card[data-id="${draggedCardId}"]`);
   const previousColumn = state.cards[draggedCardId].column;
+  // dragend 후 draggedCardId가 null이 되므로 미리 캡처
+  const cardId = draggedCardId;
+  const cardText = state.cards[draggedCardId].text;
 
   // 낙관적 업데이트: UI 먼저 반영
   if (placeholder && placeholder.parentNode === columnBody) {
@@ -383,7 +391,7 @@ function handleDrop(e) {
   }
 
   cardEl.dataset.column = targetColumn;
-  state.cards[draggedCardId].column = targetColumn;
+  state.cards[cardId].column = targetColumn;
 
   columnBody.classList.remove('drag-over');
   removePlaceholder();
@@ -395,14 +403,15 @@ function handleDrop(e) {
   // Supabase 업데이트
   db.from('cards')
     .update({ column_id: targetColumn })
-    .eq('id', draggedCardId)
+    .eq('id', cardId)
     .then(({ error }) => {
       if (error) {
         console.error('카드 이동 실패:', error);
-        // 롤백: 이전 컬럼으로 복원
-        state.cards[draggedCardId].column = previousColumn;
+        state.cards[cardId].column = previousColumn;
         renderAllCards();
         updateCardCounts();
+      } else {
+        logActivity('move', cardText, previousColumn, targetColumn);
       }
     });
 }
@@ -429,10 +438,11 @@ function handleColumnBodyClick(e) {
     .then(({ error }) => {
       if (error) {
         console.error('카드 삭제 실패:', error);
-        // 롤백: 삭제된 카드 복원 (컬럼 끝에 추가)
         state.cards[id] = previousCard;
         renderCard(id);
         updateCardCounts();
+      } else {
+        logActivity('delete', previousCard.text, previousCard.column, null);
       }
     });
 }
@@ -518,6 +528,7 @@ async function confirmAdd(columnId) {
   if (cardEl) cardEl.dataset.id = data.id;
   delete state.cards[tempId];
   state.cards[data.id] = { id: data.id, text, column: columnId };
+  logActivity('add', text, null, columnId);
 }
 
 // ── Group ─────────────────────────────────────────────────
@@ -591,6 +602,13 @@ async function joinGroup(inviteCode) {
 async function switchGroup(groupId) {
   state.currentGroupId = groupId || null;
   document.getElementById('group-selector').value = groupId || '';
+  const actBtn = document.getElementById('btn-activity-log');
+  if (groupId) {
+    actBtn.classList.remove('hidden');
+  } else {
+    actBtn.classList.add('hidden');
+    closeActivityPanel();
+  }
   await loadCards();
 }
 
@@ -708,11 +726,119 @@ function attachGroupListeners() {
   });
 }
 
+// ── Activity Log ──────────────────────────────────────────
+
+async function logActivity(action, cardText, fromCol, toCol) {
+  if (!state.currentGroupId || !currentUser) return;
+  const userEmail = currentUser.email || currentUser.user_metadata?.email || '';
+  await db.from('activity_logs').insert({
+    group_id: state.currentGroupId,
+    user_id: currentUser.id,
+    user_email: userEmail,
+    action,
+    card_text: cardText,
+    from_col: fromCol || null,
+    to_col: toCol || null,
+  });
+}
+
+function formatRelativeTime(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return '방금';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return '어제';
+  if (day < 7) return `${day}일 전`;
+  return new Date(ts).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+}
+
+function renderActivityLog(logs) {
+  const list = document.getElementById('activity-list');
+  if (!logs.length) {
+    list.innerHTML = '<p class="activity-empty">아직 활동 기록이 없습니다.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  logs.forEach(log => {
+    const item = document.createElement('div');
+    item.className = 'activity-entry';
+
+    const displayName = (log.user_email || '').split('@')[0] || '사용자';
+    const initial = displayName[0].toUpperCase();
+    const shortText = log.card_text.length > 28
+      ? log.card_text.slice(0, 28) + '…'
+      : log.card_text;
+
+    let actionHtml = '';
+    if (log.action === 'add') {
+      actionHtml = `<b>${COL_NAMES[log.to_col] || log.to_col}</b>에 카드 추가`;
+    } else if (log.action === 'move') {
+      actionHtml = `<b>${COL_NAMES[log.from_col]}</b> → <b>${COL_NAMES[log.to_col]}</b> 이동`;
+    } else if (log.action === 'delete') {
+      actionHtml = `카드 삭제`;
+    }
+
+    item.innerHTML = `
+      <div class="activity-avatar">${initial}</div>
+      <div class="activity-content">
+        <div class="activity-user">${displayName}</div>
+        <div class="activity-action">${actionHtml}</div>
+        <div class="activity-card-text">"${shortText}"</div>
+        <div class="activity-time">${formatRelativeTime(log.created_at)}</div>
+      </div>`;
+    list.appendChild(item);
+  });
+}
+
+async function loadActivityLog() {
+  const list = document.getElementById('activity-list');
+  list.innerHTML = '<p class="activity-empty">로딩 중…</p>';
+
+  const { data, error } = await db
+    .from('activity_logs')
+    .select('*')
+    .eq('group_id', state.currentGroupId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    list.innerHTML = '<p class="activity-empty">로드 실패. 다시 시도해 주세요.</p>';
+    return;
+  }
+  renderActivityLog(data);
+}
+
+function openActivityPanel() {
+  document.getElementById('activity-panel').classList.add('open');
+  loadActivityLog();
+}
+
+function closeActivityPanel() {
+  const panel = document.getElementById('activity-panel');
+  if (panel) panel.classList.remove('open');
+}
+
+function attachActivityListeners() {
+  document.getElementById('btn-activity-log').addEventListener('click', () => {
+    const panel = document.getElementById('activity-panel');
+    if (panel.classList.contains('open')) closeActivityPanel();
+    else openActivityPanel();
+  });
+
+  document.getElementById('btn-activity-refresh').addEventListener('click', loadActivityLog);
+  document.getElementById('btn-activity-close').addEventListener('click', closeActivityPanel);
+}
+
 // ── Init ──────────────────────────────────────────────────
 
 async function init() {
   attachAuthListeners();
   attachGroupListeners();
+  attachActivityListeners();
   await initAuth();
   attachColumnListeners();
   attachAddCardListeners();
