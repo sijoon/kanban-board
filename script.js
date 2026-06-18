@@ -15,6 +15,7 @@ const state = {
 };
 
 let userGroups = [];
+let moveTargetCardId = null;
 
 const COL_NAMES = { todo: 'To-do', inprogress: 'In-progress', done: 'Done' };
 
@@ -266,6 +267,24 @@ function createCardElement(card) {
   btn.textContent = '✕';
 
   article.appendChild(p);
+
+  // 개인 보드 + 그룹이 있을 때, 또는 그룹 보드일 때 이동 버튼 표시
+  const showMoveBtn = (state.currentGroupId === null && userGroups.length > 0) || state.currentGroupId !== null;
+  if (showMoveBtn) {
+    const moveBtn = document.createElement('button');
+    moveBtn.className = 'move-btn';
+    if (state.currentGroupId) {
+      moveBtn.setAttribute('aria-label', '내 보드로 이동');
+      moveBtn.setAttribute('title', '내 보드로 이동');
+      moveBtn.textContent = '←';
+    } else {
+      moveBtn.setAttribute('aria-label', '그룹으로 이동');
+      moveBtn.setAttribute('title', '그룹으로 이동');
+      moveBtn.textContent = '→';
+    }
+    article.appendChild(moveBtn);
+  }
+
   article.appendChild(btn);
 
   attachCardListeners(article);
@@ -419,6 +438,22 @@ function handleDrop(e) {
 // ── Delete ────────────────────────────────────────────────
 
 function handleColumnBodyClick(e) {
+  // 이동 버튼 처리
+  const moveBtn = e.target.closest('.move-btn');
+  if (moveBtn) {
+    const cardId = moveBtn.closest('.card').dataset.id;
+    if (state.currentGroupId === null) {
+      if (userGroups.length === 1) {
+        moveCardToGroup(cardId, userGroups[0].id);
+      } else {
+        openMoveToGroupModal(cardId);
+      }
+    } else {
+      moveCardToPersonal(cardId);
+    }
+    return;
+  }
+
   const btn = e.target.closest('.delete-btn');
   if (!btn) return;
 
@@ -529,6 +564,76 @@ async function confirmAdd(columnId) {
   delete state.cards[tempId];
   state.cards[data.id] = { id: data.id, text, column: columnId };
   logActivity('add', text, null, columnId);
+}
+
+// ── Board Transfer ────────────────────────────────────────
+
+async function moveCardToGroup(cardId, groupId) {
+  const card = { ...state.cards[cardId] };
+  const cardEl = document.querySelector(`.card[data-id="${cardId}"]`);
+
+  if (cardEl) cardEl.remove();
+  delete state.cards[cardId];
+  updateCardCounts();
+
+  const { error } = await db.from('cards').update({ group_id: groupId }).eq('id', cardId);
+  if (error) {
+    console.error('그룹 이동 실패:', error);
+    state.cards[cardId] = card;
+    renderCard(cardId);
+    updateCardCounts();
+    return;
+  }
+
+  // 대상 그룹에 활동 로그 직접 삽입 (currentGroupId가 다를 수 있음)
+  const userEmail = currentUser?.email || currentUser?.user_metadata?.email || '';
+  db.from('activity_logs').insert({
+    group_id: groupId,
+    user_id: currentUser.id,
+    user_email: userEmail,
+    action: 'add',
+    card_text: card.text,
+    from_col: null,
+    to_col: card.column,
+  });
+}
+
+async function moveCardToPersonal(cardId) {
+  const card = { ...state.cards[cardId] };
+  const cardEl = document.querySelector(`.card[data-id="${cardId}"]`);
+
+  if (cardEl) cardEl.remove();
+  delete state.cards[cardId];
+  updateCardCounts();
+
+  const { error } = await db.from('cards').update({ group_id: null }).eq('id', cardId);
+  if (error) {
+    console.error('내 보드 이동 실패:', error);
+    state.cards[cardId] = card;
+    renderCard(cardId);
+    updateCardCounts();
+    return;
+  }
+
+  logActivity('delete', card.text, card.column, null);
+}
+
+function openMoveToGroupModal(cardId) {
+  moveTargetCardId = cardId;
+  const list = document.getElementById('move-group-list');
+  list.innerHTML = '';
+  userGroups.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'move-group-item';
+    btn.textContent = g.name;
+    btn.addEventListener('click', () => {
+      document.getElementById('modal-move-to-group').classList.add('hidden');
+      moveCardToGroup(moveTargetCardId, g.id);
+      moveTargetCardId = null;
+    });
+    list.appendChild(btn);
+  });
+  document.getElementById('modal-move-to-group').classList.remove('hidden');
 }
 
 // ── Group ─────────────────────────────────────────────────
@@ -723,6 +828,12 @@ function attachGroupListeners() {
   document.getElementById('invite-code-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('btn-join-group-confirm').click();
     if (e.key === 'Escape') document.getElementById('btn-join-group-cancel').click();
+  });
+
+  // 그룹 이동 모달 취소
+  document.getElementById('btn-move-group-cancel').addEventListener('click', () => {
+    document.getElementById('modal-move-to-group').classList.add('hidden');
+    moveTargetCardId = null;
   });
 }
 

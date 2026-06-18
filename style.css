@@ -356,7 +356,7 @@ body {
   font-size: 14px;
   color: var(--color-text-primary);
   word-break: break-word;
-  padding-right: 20px;
+  padding-right: 48px;
 }
 
 /* ── Delete Button ── */
@@ -383,6 +383,56 @@ body {
 .delete-btn:hover {
   color: var(--color-danger);
   background: rgba(222, 53, 11, 0.08);
+}
+
+/* ── Move Button ── */
+.move-btn {
+  position: absolute;
+  top: 6px;
+  right: 28px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.card:hover .move-btn {
+  opacity: 1;
+}
+
+.move-btn:hover {
+  color: var(--color-todo);
+  background: rgba(0, 82, 204, 0.08);
+}
+
+.move-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.move-group-item {
+  padding: 10px 14px;
+  background: #f4f5f7;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.move-group-item:hover {
+  background: #e8f0fe;
+  border-color: var(--color-todo);
+  color: var(--color-todo);
 }
 
 /* ── Drop Placeholder ── */
