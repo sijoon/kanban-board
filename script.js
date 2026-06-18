@@ -536,12 +536,12 @@ async function confirmAdd(columnId) {
 async function loadGroups() {
   const { data, error } = await db
     .from('kanban_group_members')
-    .select('group_id, groups(id, name, invite_code, owner_id)')
+    .select('group_id, kanban_groups(id, name, invite_code, owner_id)')
     .eq('user_id', currentUser.id);
 
   if (error) { console.error('그룹 로드 실패:', error); return; }
 
-  userGroups = (data || []).map(row => row.groups);
+  userGroups = (data || []).map(row => row.kanban_groups);
 
   const sel = document.getElementById('group-selector');
   sel.innerHTML = '<option value="">내 보드</option>';
