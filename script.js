@@ -535,7 +535,7 @@ async function confirmAdd(columnId) {
 
 async function loadGroups() {
   const { data, error } = await db
-    .from('group_members')
+    .from('kanban_group_members')
     .select('group_id, groups(id, name, invite_code, owner_id)')
     .eq('user_id', currentUser.id);
 
@@ -557,7 +557,7 @@ async function loadGroups() {
 async function createGroup(name) {
   // 그룹 생성
   const { data: group, error: groupErr } = await db
-    .from('groups')
+    .from('kanban_groups')
     .insert({ name, owner_id: currentUser.id })
     .select()
     .single();
@@ -565,7 +565,7 @@ async function createGroup(name) {
 
   // 생성자를 멤버로 자동 등록
   const { error: memberErr } = await db
-    .from('group_members')
+    .from('kanban_group_members')
     .insert({ group_id: group.id, user_id: currentUser.id });
   if (memberErr) throw memberErr;
 
@@ -574,7 +574,7 @@ async function createGroup(name) {
 
 async function joinGroup(inviteCode) {
   const { data: group, error: findErr } = await db
-    .from('groups')
+    .from('kanban_groups')
     .select('id, name')
     .eq('invite_code', inviteCode.toUpperCase())
     .maybeSingle();
@@ -583,7 +583,7 @@ async function joinGroup(inviteCode) {
   if (!group) throw new Error('유효하지 않은 초대 코드입니다.');
 
   const { data: existing } = await db
-    .from('group_members')
+    .from('kanban_group_members')
     .select('group_id')
     .eq('group_id', group.id)
     .eq('user_id', currentUser.id)
@@ -592,7 +592,7 @@ async function joinGroup(inviteCode) {
   if (existing) throw new Error('이미 참여한 그룹입니다.');
 
   const { error: joinErr } = await db
-    .from('group_members')
+    .from('kanban_group_members')
     .insert({ group_id: group.id, user_id: currentUser.id });
   if (joinErr) throw joinErr;
 
