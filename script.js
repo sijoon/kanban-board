@@ -7,40 +7,11 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 
-// ── Storage (localStorage) ────────────────────────────────
-
-const STORAGE_KEY = 'kanban_state';
+// ── 상태 ─────────────────────────────────────────────────
 
 const state = {
   cards: {},
-  idCounter: 1,
 };
-
-const INITIAL_CARDS = [
-  { id: 'c1', text: '리서치 경쟁사 분석', column: 'todo' },
-  { id: 'c2', text: '프로젝트 기획서 작성', column: 'todo' },
-  { id: 'c3', text: '와이어프레임 설계', column: 'inprogress' },
-  { id: 'c4', text: '레포지토리 설정', column: 'done' },
-];
-
-function saveToLocalStorage() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (_) {}
-}
-
-function loadFromLocalStorage() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      state.cards = parsed.cards || {};
-      state.idCounter = parsed.idCounter || 1;
-      return true;
-    }
-  } catch (_) {}
-  return false;
-}
 
 // ── Auth UI ───────────────────────────────────────────────
 
@@ -48,15 +19,21 @@ function showAuthOverlay() {
   document.getElementById('auth-overlay').classList.remove('hidden');
   document.getElementById('app-header').classList.add('hidden');
   document.getElementById('board').classList.add('hidden');
+
+  state.cards = {};
+  renderAllCards();
+  updateCardCounts();
 }
 
-function showApp() {
+async function showApp() {
   document.getElementById('auth-overlay').classList.add('hidden');
   document.getElementById('app-header').classList.remove('hidden');
   document.getElementById('board').classList.remove('hidden');
 
   const email = currentUser?.email || currentUser?.user_metadata?.name || '';
   document.getElementById('user-email').textContent = email;
+
+  await loadCards();
 }
 
 function setAuthError(msg) {
@@ -123,16 +100,16 @@ async function initAuth() {
   const { data: { session } } = await db.auth.getSession();
   if (session) {
     currentUser = session.user;
-    showApp();
+    await showApp();
   } else {
     showAuthOverlay();
   }
 
   // 세션 변화 감지 (팝업 로그인 완료 / 로그아웃)
-  db.auth.onAuthStateChange((event, session) => {
+  db.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
       currentUser = session.user;
-      showApp();
+      await showApp();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       showAuthOverlay();
@@ -225,6 +202,36 @@ const AUTH_ERROR_MAP = {
   'For security purposes, you can only request this after':
     '잠시 후 다시 시도해 주세요. (재시도 제한)',
 };
+
+// ── Supabase Card CRUD ────────────────────────────────────
+
+async function loadCards() {
+  const { data, error } = await db
+    .from('cards')
+    .select('*')
+    .order('column_id')
+    .order('position');
+
+  if (error) {
+    console.error('카드 로드 실패:', error);
+    renderAllCards();
+    updateCardCounts();
+    return;
+  }
+
+  state.cards = {};
+  // Supabase 응답(column_id)을 내부 상태(column)로 매핑
+  data.forEach(card => {
+    state.cards[card.id] = {
+      id: card.id,
+      text: card.text,
+      column: card.column_id,
+    };
+  });
+
+  renderAllCards();
+  updateCardCounts();
+}
 
 // ── Render ────────────────────────────────────────────────
 
@@ -357,7 +364,9 @@ function handleDrop(e) {
   const columnBody = e.currentTarget;
   const targetColumn = columnBody.dataset.column;
   const cardEl = document.querySelector(`.card[data-id="${draggedCardId}"]`);
+  const previousColumn = state.cards[draggedCardId].column;
 
+  // 낙관적 업데이트: UI 먼저 반영
   if (placeholder && placeholder.parentNode === columnBody) {
     columnBody.insertBefore(cardEl, placeholder);
   } else {
@@ -369,9 +378,24 @@ function handleDrop(e) {
 
   columnBody.classList.remove('drag-over');
   removePlaceholder();
-
   updateCardCounts();
-  saveToLocalStorage();
+
+  // 같은 컬럼 내 이동이면 API 불필요
+  if (previousColumn === targetColumn) return;
+
+  // Supabase 업데이트
+  db.from('cards')
+    .update({ column_id: targetColumn })
+    .eq('id', draggedCardId)
+    .then(({ error }) => {
+      if (error) {
+        console.error('카드 이동 실패:', error);
+        // 롤백: 이전 컬럼으로 복원
+        state.cards[draggedCardId].column = previousColumn;
+        renderAllCards();
+        updateCardCounts();
+      }
+    });
 }
 
 // ── Delete ────────────────────────────────────────────────
@@ -382,12 +406,26 @@ function handleColumnBodyClick(e) {
 
   const cardEl = btn.closest('.card');
   const id = cardEl.dataset.id;
+  const previousCard = { ...state.cards[id] };
 
+  // 낙관적 삭제: UI 먼저 제거
   cardEl.remove();
   delete state.cards[id];
-
   updateCardCounts();
-  saveToLocalStorage();
+
+  // Supabase 삭제
+  db.from('cards')
+    .delete()
+    .eq('id', id)
+    .then(({ error }) => {
+      if (error) {
+        console.error('카드 삭제 실패:', error);
+        // 롤백: 삭제된 카드 복원 (컬럼 끝에 추가)
+        state.cards[id] = previousCard;
+        renderCard(id);
+        updateCardCounts();
+      }
+    });
 }
 
 // ── Add Card ──────────────────────────────────────────────
@@ -433,19 +471,43 @@ function closeForm(columnId) {
   col.querySelector('.add-card-btn').classList.remove('hidden');
 }
 
-function confirmAdd(columnId) {
+async function confirmAdd(columnId) {
   const col = document.querySelector(`.column[data-column="${columnId}"]`);
   const textarea = col.querySelector('.card-input');
   const text = textarea.value.trim();
   if (!text) return;
 
-  const id = 'c' + state.idCounter++;
-  state.cards[id] = { id, text, column: columnId };
-  renderCard(id);
+  const position = Object.values(state.cards).filter(c => c.column === columnId).length;
 
+  // 낙관적 업데이트: 임시 ID로 즉시 UI에 추가
+  const tempId = 'temp_' + Date.now();
+  state.cards[tempId] = { id: tempId, text, column: columnId };
+  renderCard(tempId);
   updateCardCounts();
-  saveToLocalStorage();
   closeForm(columnId);
+
+  const { data, error } = await db.from('cards').insert({
+    user_id: currentUser.id,
+    text,
+    column_id: columnId,
+    position,
+  }).select().single();
+
+  if (error) {
+    console.error('카드 추가 실패:', error);
+    // 롤백: 임시 카드 제거
+    const cardEl = document.querySelector(`.card[data-id="${tempId}"]`);
+    if (cardEl) cardEl.remove();
+    delete state.cards[tempId];
+    updateCardCounts();
+    return;
+  }
+
+  // 임시 ID를 Supabase UUID로 교체
+  const cardEl = document.querySelector(`.card[data-id="${tempId}"]`);
+  if (cardEl) cardEl.dataset.id = data.id;
+  delete state.cards[tempId];
+  state.cards[data.id] = { id: data.id, text, column: columnId };
 }
 
 // ── Init ──────────────────────────────────────────────────
@@ -453,18 +515,8 @@ function confirmAdd(columnId) {
 async function init() {
   attachAuthListeners();
   await initAuth();
-
-  // 칸반 보드 초기화 (로그인 여부와 무관하게 데이터 로드)
-  const restored = loadFromLocalStorage();
-  if (!restored) {
-    INITIAL_CARDS.forEach(card => { state.cards[card.id] = { ...card }; });
-    state.idCounter = 5;
-  }
-
-  renderAllCards();
   attachColumnListeners();
   attachAddCardListeners();
-  updateCardCounts();
 }
 
 document.addEventListener('DOMContentLoaded', init);
