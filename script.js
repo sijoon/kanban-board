@@ -11,7 +11,10 @@ let currentUser = null;
 
 const state = {
   cards: {},
+  currentGroupId: null,
 };
+
+let userGroups = [];
 
 // ── Auth UI ───────────────────────────────────────────────
 
@@ -21,6 +24,8 @@ function showAuthOverlay() {
   document.getElementById('board').classList.add('hidden');
 
   state.cards = {};
+  state.currentGroupId = null;
+  userGroups = [];
   renderAllCards();
   updateCardCounts();
 }
@@ -33,6 +38,7 @@ async function showApp() {
   const email = currentUser?.email || currentUser?.user_metadata?.name || '';
   document.getElementById('user-email').textContent = email;
 
+  await loadGroups();
   await loadCards();
 }
 
@@ -206,11 +212,15 @@ const AUTH_ERROR_MAP = {
 // ── Supabase Card CRUD ────────────────────────────────────
 
 async function loadCards() {
-  const { data, error } = await db
-    .from('cards')
-    .select('*')
-    .order('column_id')
-    .order('position');
+  let query = db.from('cards').select('*').order('column_id').order('position');
+
+  if (state.currentGroupId) {
+    query = query.eq('group_id', state.currentGroupId);
+  } else {
+    query = query.is('group_id', null);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('카드 로드 실패:', error);
@@ -220,7 +230,6 @@ async function loadCards() {
   }
 
   state.cards = {};
-  // Supabase 응답(column_id)을 내부 상태(column)로 매핑
   data.forEach(card => {
     state.cards[card.id] = {
       id: card.id,
@@ -491,6 +500,7 @@ async function confirmAdd(columnId) {
     text,
     column_id: columnId,
     position,
+    group_id: state.currentGroupId || null,
   }).select().single();
 
   if (error) {
@@ -510,10 +520,199 @@ async function confirmAdd(columnId) {
   state.cards[data.id] = { id: data.id, text, column: columnId };
 }
 
+// ── Group ─────────────────────────────────────────────────
+
+async function loadGroups() {
+  const { data, error } = await db
+    .from('group_members')
+    .select('group_id, groups(id, name, invite_code, owner_id)')
+    .eq('user_id', currentUser.id);
+
+  if (error) { console.error('그룹 로드 실패:', error); return; }
+
+  userGroups = (data || []).map(row => row.groups);
+
+  const sel = document.getElementById('group-selector');
+  sel.innerHTML = '<option value="">내 보드</option>';
+  userGroups.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.id;
+    opt.textContent = g.name;
+    sel.appendChild(opt);
+  });
+  sel.value = state.currentGroupId || '';
+}
+
+async function createGroup(name) {
+  // 그룹 생성
+  const { data: group, error: groupErr } = await db
+    .from('groups')
+    .insert({ name, owner_id: currentUser.id })
+    .select()
+    .single();
+  if (groupErr) throw groupErr;
+
+  // 생성자를 멤버로 자동 등록
+  const { error: memberErr } = await db
+    .from('group_members')
+    .insert({ group_id: group.id, user_id: currentUser.id });
+  if (memberErr) throw memberErr;
+
+  return group;
+}
+
+async function joinGroup(inviteCode) {
+  const { data: group, error: findErr } = await db
+    .from('groups')
+    .select('id, name')
+    .eq('invite_code', inviteCode.toUpperCase())
+    .maybeSingle();
+
+  if (findErr) throw findErr;
+  if (!group) throw new Error('유효하지 않은 초대 코드입니다.');
+
+  const { data: existing } = await db
+    .from('group_members')
+    .select('group_id')
+    .eq('group_id', group.id)
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+
+  if (existing) throw new Error('이미 참여한 그룹입니다.');
+
+  const { error: joinErr } = await db
+    .from('group_members')
+    .insert({ group_id: group.id, user_id: currentUser.id });
+  if (joinErr) throw joinErr;
+
+  return group;
+}
+
+async function switchGroup(groupId) {
+  state.currentGroupId = groupId || null;
+  document.getElementById('group-selector').value = groupId || '';
+  await loadCards();
+}
+
+function setGroupError(modalId, msg) {
+  const el = document.getElementById(modalId);
+  el.textContent = msg;
+  el.classList.toggle('hidden', !msg);
+}
+
+function attachGroupListeners() {
+  // 그룹 셀렉터 변경
+  document.getElementById('group-selector').addEventListener('change', e => {
+    switchGroup(e.target.value);
+  });
+
+  // 그룹 만들기 버튼 → 모달 열기
+  document.getElementById('btn-create-group').addEventListener('click', () => {
+    document.getElementById('group-name-input').value = '';
+    setGroupError('create-group-error', '');
+    document.getElementById('modal-create-group').classList.remove('hidden');
+    document.getElementById('group-name-input').focus();
+  });
+
+  // 그룹 만들기 취소
+  document.getElementById('btn-create-group-cancel').addEventListener('click', () => {
+    document.getElementById('modal-create-group').classList.add('hidden');
+  });
+
+  // 그룹 만들기 확인
+  document.getElementById('btn-create-group-confirm').addEventListener('click', async () => {
+    const name = document.getElementById('group-name-input').value.trim();
+    if (!name) { setGroupError('create-group-error', '그룹 이름을 입력하세요.'); return; }
+
+    const btn = document.getElementById('btn-create-group-confirm');
+    btn.disabled = true;
+    btn.textContent = '처리 중…';
+    setGroupError('create-group-error', '');
+
+    try {
+      const group = await createGroup(name);
+      document.getElementById('modal-create-group').classList.add('hidden');
+      document.getElementById('invite-code-display').textContent = group.invite_code;
+      document.getElementById('modal-invite-code').classList.remove('hidden');
+      await loadGroups();
+      await switchGroup(group.id);
+    } catch (err) {
+      setGroupError('create-group-error', err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '만들기';
+    }
+  });
+
+  // 그룹 만들기 input Enter 키
+  document.getElementById('group-name-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-create-group-confirm').click();
+    if (e.key === 'Escape') document.getElementById('btn-create-group-cancel').click();
+  });
+
+  // 초대 코드 복사
+  document.getElementById('btn-copy-invite-code').addEventListener('click', () => {
+    const code = document.getElementById('invite-code-display').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = document.getElementById('btn-copy-invite-code');
+      btn.textContent = '복사됨!';
+      setTimeout(() => { btn.textContent = '복사'; }, 1500);
+    });
+  });
+
+  // 초대 코드 닫기
+  document.getElementById('btn-close-invite-code').addEventListener('click', () => {
+    document.getElementById('modal-invite-code').classList.add('hidden');
+  });
+
+  // 코드 참여 버튼 → 모달 열기
+  document.getElementById('btn-join-group').addEventListener('click', () => {
+    document.getElementById('invite-code-input').value = '';
+    setGroupError('join-group-error', '');
+    document.getElementById('modal-join-group').classList.remove('hidden');
+    document.getElementById('invite-code-input').focus();
+  });
+
+  // 참여 취소
+  document.getElementById('btn-join-group-cancel').addEventListener('click', () => {
+    document.getElementById('modal-join-group').classList.add('hidden');
+  });
+
+  // 참여 확인
+  document.getElementById('btn-join-group-confirm').addEventListener('click', async () => {
+    const code = document.getElementById('invite-code-input').value.trim();
+    if (!code) { setGroupError('join-group-error', '초대 코드를 입력하세요.'); return; }
+
+    const btn = document.getElementById('btn-join-group-confirm');
+    btn.disabled = true;
+    btn.textContent = '처리 중…';
+    setGroupError('join-group-error', '');
+
+    try {
+      const group = await joinGroup(code);
+      document.getElementById('modal-join-group').classList.add('hidden');
+      await loadGroups();
+      await switchGroup(group.id);
+    } catch (err) {
+      setGroupError('join-group-error', err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '참여';
+    }
+  });
+
+  // 참여 input Enter 키
+  document.getElementById('invite-code-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-join-group-confirm').click();
+    if (e.key === 'Escape') document.getElementById('btn-join-group-cancel').click();
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────
 
 async function init() {
   attachAuthListeners();
+  attachGroupListeners();
   await initAuth();
   attachColumnListeners();
   attachAddCardListeners();

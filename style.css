@@ -482,6 +482,146 @@ body {
   background: rgba(9, 30, 66, 0.08);
 }
 
+/* ── Group Controls (Header) ── */
+.group-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+#group-selector {
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  cursor: pointer;
+  max-width: 160px;
+  outline: none;
+}
+
+#group-selector option {
+  background: #0052cc;
+  color: #fff;
+}
+
+.group-controls button {
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+}
+
+.group-controls button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: var(--space-lg);
+}
+
+.modal-box {
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  padding: 32px;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.modal-desc {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.modal-error {
+  font-size: 13px;
+  color: var(--color-danger);
+  background: rgba(222, 53, 11, 0.07);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: 0;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.modal-input:focus {
+  border-color: var(--color-todo);
+}
+
+.modal-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.modal-actions button {
+  flex: 1;
+}
+
+.btn-secondary {
+  padding: 6px 14px;
+  background: #f4f5f7;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: var(--color-border);
+}
+
+/* ── Invite Code Display ── */
+.invite-code-box {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  text-align: center;
+  padding: var(--space-lg);
+  background: #f4f5f7;
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+  font-family: 'Courier New', monospace;
+}
+
 /* ── Utility ── */
 .hidden {
   display: none !important;

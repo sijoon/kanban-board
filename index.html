@@ -54,6 +54,13 @@
   <!-- ── 앱 본체 (로그인 후 표시) ── -->
   <header class="app-header hidden" id="app-header">
     <h1 class="app-title">Kanban Board</h1>
+    <div class="group-controls">
+      <select id="group-selector">
+        <option value="">내 보드</option>
+      </select>
+      <button id="btn-create-group">+ 그룹</button>
+      <button id="btn-join-group">코드 참여</button>
+    </div>
     <div class="user-info">
       <span class="user-email" id="user-email"></span>
       <button class="logout-btn" id="btn-logout">로그아웃</button>
@@ -120,6 +127,46 @@
     </section>
 
   </main>
+
+  <!-- ── 그룹 생성 모달 ── -->
+  <div id="modal-create-group" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h2 class="modal-title">새 그룹 만들기</h2>
+      <input id="group-name-input" type="text" class="modal-input" placeholder="그룹 이름" maxlength="30" />
+      <p id="create-group-error" class="modal-error hidden"></p>
+      <div class="modal-actions">
+        <button id="btn-create-group-confirm" class="confirm-add-btn">만들기</button>
+        <button id="btn-create-group-cancel" class="btn-secondary">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 초대 코드 표시 모달 ── -->
+  <div id="modal-invite-code" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h2 class="modal-title">그룹이 만들어졌습니다</h2>
+      <p class="modal-desc">아래 초대 코드를 멤버에게 공유하세요.</p>
+      <div id="invite-code-display" class="invite-code-box"></div>
+      <div class="modal-actions">
+        <button id="btn-copy-invite-code" class="confirm-add-btn">복사</button>
+        <button id="btn-close-invite-code" class="btn-secondary">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 그룹 참여 모달 ── -->
+  <div id="modal-join-group" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h2 class="modal-title">그룹 참여</h2>
+      <input id="invite-code-input" type="text" class="modal-input" placeholder="초대 코드 6자리"
+             maxlength="6" style="text-transform:uppercase" />
+      <p id="join-group-error" class="modal-error hidden"></p>
+      <div class="modal-actions">
+        <button id="btn-join-group-confirm" class="confirm-add-btn">참여</button>
+        <button id="btn-join-group-cancel" class="btn-secondary">취소</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="script.js"></script>
