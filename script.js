@@ -1,8 +1,6 @@
 // ── Supabase 설정 ─────────────────────────────────────────
-// TODO: 아래 두 값을 Supabase 프로젝트 설정에서 복사하세요
-// Dashboard → Project Settings → API
-const SUPABASE_URL = 'https://your-project-ref.supabase.co';
-const SUPABASE_ANON_KEY = 'your-anon-key';
+const SUPABASE_URL = 'https://pumjlplxtcljhbwoylbq.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1bWpscGx4dGNsamhid295bGJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MjA3MjEsImV4cCI6MjA5NzI5NjcyMX0.kL6J1hw4vt6bSMVQWI3c6Zj_gDxEo7KIV6LUn5VmW9M';
 
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
